@@ -1,0 +1,123 @@
+version: '2'
+
+# define the network
+networks:
+    web-network:
+        driver: bridge
+
+services:
+    mariadb_dev:
+        container_name: mariadb_dev
+        hostname: mariadb_dev
+        build:
+            context: .
+            dockerfile: ./docker/mariadb/Dockerfile
+        ports:
+            - '3306:3306'
+        volumes:
+            - ./docker/mariadb/db:/var/lib/mysql
+        # connect to the network
+        # corresponds to the "--network" option
+        restart: always
+        networks:
+            - web-network
+        environment:
+            MYSQL_ROOT_PASSWORD: 123123
+            MYSQL_ROOT_HOST: '%'
+            MYSQL_DATABASE: magento_db
+            MYSQL_USER: root
+            MYSQL_PASSWORD: 123123
+        command: >
+            --character-set-server=utf8mb4
+            --collation-server=utf8mb4_unicode_ci
+    myadmin_dev:
+        image: phpmyadmin/phpmyadmin
+        container_name: phpmyadmin
+        ports:
+            - 8081:80
+        restart: always
+        links:
+            - mariadb_dev:db
+        depends_on:
+            - mariadb_dev
+        networks:
+            - web-network
+    redis_dev:
+        container_name: redis_dev
+        hostname: redis_dev
+        build:
+            context: .
+            dockerfile: ./docker/redis/Dockerfile
+        ports:
+            - '6379:6379'
+        command: redis-server /usr/local/etc/redis/redis.conf
+        volumes:
+            - ./docker/redis/data:/data
+            - ./docker/redis/conf/redis.conf:/usr/local/etc/redis/redis.conf
+        # connect to the network
+        # corresponds to the "--network" option
+        restart: always
+        networks:
+            - web-network
+        environment:
+            - REDIS_HOST=redis
+            - REDIS_REPLICATION_MODE=master
+            - REDIS_PASSWORD=123123
+    redis_admin:
+      container_name: redis_admin_dev
+      hostname: redis_admin_dev
+      build:
+        context: .
+        dockerfile: ./docker/php-redis-admin/Dockerfile
+      ports:
+        - '8083:80'
+      restart: always
+      links:
+        - redis_dev
+      depends_on:
+        - redis_dev
+      networks:
+        - web-network
+      environment:
+        - REDIS_1_HOST=redis_dev
+        - REDIS_1_PORT=6379
+        - REDIS_1_AUTH=123123
+    webserver_dev:
+        build:
+            context: .
+            dockerfile: ./docker/php-apache/Dockerfile
+        cap_add:
+          - SYS_ADMIN
+        container_name: webserver_dev
+        privileged: true
+        depends_on:
+            - mariadb_dev
+            - redis_dev
+        ports:
+            - '443:443'
+            - '80:80'
+        volumes:
+            - .:/var/www/html
+            - ./docker/php-apache/misc/ssl/localhost.crt:/etc/ssl/certs/localhost.crt
+            - ./docker/php-apache/misc/ssl/localhost.key:/etc/pki/tls/private/localhost.key
+        # connect to the network
+        # corresponds to the "--network" option
+        restart: 'unless-stopped'
+        networks:
+            - web-network
+        environment:
+            XDEBUG_CONFIG: remote_host=host.docker.internal
+            PHP_IDE_CONFIG: 'serverName=localhost'
+    mail_dev:
+        build:
+          context: .
+          dockerfile: ./docker/mail-dev/Dockerfile
+        container_name: mail_dev_server
+        ports:
+          - 8082:80
+          - 25:25
+        restart: always
+        depends_on:
+          - webserver_dev
+        networks:
+          - web-network

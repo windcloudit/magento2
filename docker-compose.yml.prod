@@ -1,0 +1,81 @@
+version: '2'
+
+# define the network
+networks:
+    web-network:
+        driver: bridge
+
+services:
+    mariadb:
+        container_name: mariadb
+        hostname: mariadb
+        build:
+            context: ./docker/mariadb
+        ports:
+            - '3307:3306'
+        volumes:
+            - ./docker/mariadb/db:/var/lib/mysql
+        # connect to the network
+        # corresponds to the "--network" option
+        restart: always
+        networks:
+            - web-network
+        environment:
+            MYSQL_ROOT_PASSWORD: 123123
+            MYSQL_ROOT_HOST: '%'
+            MYSQL_DATABASE: edugate_db
+            MYSQL_USER: root
+            MYSQL_PASSWORD: 123123
+        command: >
+            --character-set-server=utf8mb4
+            --collation-server=utf8mb4_unicode_ci
+    redis:
+        container_name: redis
+        hostname: redis
+        build:
+            context: ./docker/redis
+        ports:
+            - '6379:6379'
+        command: redis-server /usr/local/etc/redis/redis.conf
+        volumes:
+            - ./docker/redis/data:/data
+            - ./docker/redis/conf/redis.conf:/usr/local/etc/redis/redis.conf
+        # connect to the network
+        # corresponds to the "--network" option
+        restart: always
+        networks:
+            - web-network
+        environment:
+            - REDIS_HOST=redis
+            - REDIS_REPLICATION_MODE=master
+            - REDIS_PASSWORD=123123
+    php-fpm:
+        build:
+            context: ./docker/docker-php-fpm
+        container_name: php-fpm
+        depends_on:
+            - mariadb
+            - redis
+        volumes:
+            - .:/var/www/html
+        restart: always
+        networks:
+            - web-network
+    webserver:
+        build:
+            context: ./docker/docker-web
+        container_name: webserver
+        depends_on:
+            - mariadb
+            - redis
+            - php-fpm
+        ports:
+            - '4343:443'
+            - '8080:80'
+        volumes:
+            - .:/var/www/html
+        # connect to the network
+        # corresponds to the "--network" option
+        restart: 'unless-stopped'
+        networks:
+            - web-network
